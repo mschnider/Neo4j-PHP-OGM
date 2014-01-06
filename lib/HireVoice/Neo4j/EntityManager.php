@@ -40,6 +40,7 @@ class EntityManager
 {
     const ENTITY_CREATE = 'entity.create';
     const RELATION_CREATE = 'relation.create';
+    const RELATION_UPDATE = 'relation.update';
     const QUERY_RUN = 'query.run';
     const NODE_INDEX = 'node';
     const FULLTEXT_INDEX = 'fulltext';
@@ -528,12 +529,19 @@ class EntityManager
 
         foreach ($existing as $r) {
             if (basename($r['end']) == $b->getId()) {
+
+                $relationship = $this->client->getRelationship(basename($r['self']));
+                $relationship->setProperty('updateDate', $this->getCurrentDate());
+
+                $this->triggerEvent(self::RELATION_UPDATE, $relation, $a, $b, $relationship);
+
                 return;
             }
         }
 
         $relationship = $a->relateTo($b, $relation)
             ->setProperty('creationDate', $this->getCurrentDate())
+            ->setProperty('updateDate', $this->getCurrentDate())
             ->save();
 
         list($relation, $a, $b) = func_get_args();
@@ -696,4 +704,3 @@ class EntityManager
         return clone $this->pathFinder;
     }
 }
-
