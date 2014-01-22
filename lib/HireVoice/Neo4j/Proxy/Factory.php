@@ -236,7 +236,7 @@ class $proxyClass extends $className implements HireVoice\\Neo4j\\Proxy\\Entity
 
 CONTENT;
             if ( ! is_dir($this->proxyDir)) {
-                if (false === @mkdir($this->proxyDir, 0775, true)) {
+                if (false === @mkdir($this->proxyDir, 0777, true)) {
                     throw new Exception('Proxy Dir is not writable');
                 }
             } else if ( ! is_writable($this->proxyDir)) {
