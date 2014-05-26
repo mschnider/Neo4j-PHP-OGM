@@ -579,24 +579,21 @@ class EntityManager
     /**
      * @access private
      */
-    function addRelation($name, $a, $b)
+    function addRelation($relation, $a, $b)
     {
-        $relationName = $name;
+        $relationName = $relation;
         $forceCreate = false;
         if ($relation instanceof Relation) {
             $relationName = $relation->getType();
             $forceCreate = $relation->isForceCreate();
         } else {
-            $name = null;
+            $relation = null;
         }
 
         $a = $this->getLoadedNode($a);
         $b = $this->getLoadedNode($b);
 
         if (!$forceCreate) {
-            $existing = $this->getRelationsFrom($a, $relationName);
-            $this->dispatchEvent(new Events\PreRelationCreate($a, $b, $relationName));
-
             $existing = $this->getRelationsFrom($a, $relationName);
 
             foreach ($existing as $r) {
@@ -605,7 +602,7 @@ class EntityManager
                     $relationship = $this->client->getRelationship(basename($r['self']));
                     $relationship->setProperty('updateDate', $this->getCurrentDate());
 
-                    $this->dispatchEvent(new Events\PostRelationUpdate($a, $b, $relationName, $relationship));
+                    $this->dispatchEvent(new Events\PreRelationUpdate($a, $b, $relationName, $relationship));
 
                     return;
                 }
@@ -615,6 +612,8 @@ class EntityManager
         $relationship = $a->relateTo($b, $relationName)
             ->setProperty('creationDate', $this->getCurrentDate())
             ->setProperty('updateDate', $this->getCurrentDate());
+
+        $this->dispatchEvent(new Events\PreRelationCreate($a, $b, $relationName, $relationship));
 
         if ($relation !== null) {
             foreach ($relation->getProperties() as $key => $value) {
