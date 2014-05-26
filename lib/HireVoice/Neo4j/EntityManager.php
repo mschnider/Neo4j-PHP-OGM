@@ -116,6 +116,9 @@ class EntityManager
      */
     public function getEventManager()
     {
+        if ($this->eventManager === null) {
+            $this->eventManager = new EventManager();
+        }
         return $this->eventManager;
     }
 
@@ -394,9 +397,7 @@ class EntityManager
      */
     private function dispatchEvent(Event $event)
     {
-        if ($this->eventManager instanceof EventManager) {
-            $this->eventManager->dispatchEvent($event->getEventName(), $event);
-        }
+        $this->getEventManager()->dispatchEvent($event->getEventName(), $event);
     }
 
     private function discoverEntities()

@@ -3,16 +3,16 @@
 namespace HireVoice\Neo4j\Event;
 
 /**
- * Event postRelationUpdate
+ * Event preRelationUpdate
  */
-class PostRelationUpdate extends RelationEvent
+class PreRelationUpdate extends RelationEvent
 {
     /**
      * {@inheritdoc}
      */
     public function getEventName()
     {
-        return 'postRelationUpdate';
+        return 'preRelationUpdate';
     }
 
 }
