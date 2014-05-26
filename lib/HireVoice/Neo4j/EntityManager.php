@@ -344,6 +344,7 @@ class EntityManager
      * specifying the correct annotation.
      *
      * @param string $class Fully qualified class name
+     * @return Repository
      */
     function getRepository($class)
     {
@@ -420,12 +421,25 @@ class EntityManager
                 $list = $property->getValue($entity);
 
                 foreach ($list as $entry) {
-                    $addCallback($entry, $property->getName());
+                    $relation = $property->getName();
+                    if ($entry instanceof Relation) {
+                        $relation = $entry;
+                        $relation->setType($property->getName());
+                        $entry = $entry->getTarget();
+                    }
+                    $addCallback($entry, $relation);
                 }
 
                 if ($removeCallback && $list instanceof Extension\ArrayCollection) {
                     foreach ($list->getRemovedElements() as $entry) {
-                        $removeCallback($entry, $property->getName());
+                        $relation = $property->getName();
+                        if ($entry instanceof Relation) {
+                            $relation = $entry;
+                            $relation->setType($property->getName());
+                            $entry = $entry->getTarget();
+                        }
+
+                        $removeCallback($entry, $relation);
                     }
                 }
             }
@@ -434,10 +448,17 @@ class EntityManager
         foreach ($meta->getManyToOneRelations() as $property) {
             if ($property->isTraversed()) {
                 if ($entry = $property->getValue($entity)) {
-                    if ($removeCallback) {
-                        $this->removePreviousRelations($entity, $property->getName(), $entry);
+                    $relation = $property->getName();
+                    if ($entry instanceof Relation) {
+                        $relation = $entry;
+                        $relation->setType($property->getName());
+                        $entry = $entry->getTarget();
                     }
-                    $addCallback($entry, $property->getName());
+
+                    if ($removeCallback) {
+                        $this->removePreviousRelations($entity, $relation, $entry);
+                    }
+                    $addCallback($entry, $relation);
                 }
             }
         }
@@ -551,32 +572,50 @@ class EntityManager
      */
     function addRelation($name, $a, $b)
     {
+        $relationName = $name;
+        $forceCreate = false;
+        if ($relation instanceof Relation) {
+            $relationName = $relation->getType();
+            $forceCreate = $relation->isForceCreate();
+        } else {
+            $name = null;
+        }
+
         $a = $this->getLoadedNode($a);
         $b = $this->getLoadedNode($b);
 
-        $this->dispatchEvent(new Events\PreRelationCreate($a, $b, $name));
+        if (!$forceCreate) {
+            $existing = $this->getRelationsFrom($a, $relationName);
+            $this->dispatchEvent(new Events\PreRelationCreate($a, $b, $relationName));
 
-        $existing = $this->getRelationsFrom($a, $name);
+            $existing = $this->getRelationsFrom($a, $relationName);
 
-        foreach ($existing as $r) {
-            if (basename($r['end']) == $b->getId()) {
+            foreach ($existing as $r) {
+                if (basename($r['end']) == $b->getId()) {
 
-                $relationship = $this->client->getRelationship(basename($r['self']));
-                $relationship->setProperty('updateDate', $this->getCurrentDate());
+                    $relationship = $this->client->getRelationship(basename($r['self']));
+                    $relationship->setProperty('updateDate', $this->getCurrentDate());
 
-                $this->dispatchEvent(new Events\PostRelationUpdate($a, $b, $name, $relationship));
+                    $this->dispatchEvent(new Events\PostRelationUpdate($a, $b, $relationName, $relationship));
 
-                return;
+                    return;
+                }
             }
         }
 
-        $relationship = $a->relateTo($b, $name)
+        $relationship = $a->relateTo($b, $relationName)
             ->setProperty('creationDate', $this->getCurrentDate())
-            ->setProperty('updateDate', $this->getCurrentDate())
-            ->save();
+            ->setProperty('updateDate', $this->getCurrentDate());
 
-        list($name, $a, $b) = func_get_args();
-        $this->dispatchEvent(new Events\PostRelationCreate($a, $b, $name, $relationship));
+        if ($relation !== null) {
+            foreach ($relation->getProperties() as $key => $value) {
+                $relationship->setProperty($key, $value);
+            }
+        }
+
+        $relationship->save();
+
+        $this->dispatchEvent(new Events\PostRelationCreate($a, $b, $relationName, $relationship));
     }
 
     /**
@@ -646,6 +685,7 @@ class EntityManager
      */
     function createIndex($indexName, $type = self::NODE_INDEX)
     {
+        $indexName = str_replace('\\', '.', $indexName);
         if (! isset($this->indexes[$indexName])) {
             $newIndex = $this->createIndexInstance($indexName, $type);
             $newIndex->save();
