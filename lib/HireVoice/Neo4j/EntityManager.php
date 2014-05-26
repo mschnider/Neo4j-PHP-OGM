@@ -23,6 +23,7 @@
 
 namespace HireVoice\Neo4j;
 
+use Doctrine\Common\EventManager;
 use Everyman\Neo4j\Client,
     Everyman\Neo4j\Node,
     Everyman\Neo4j\Relationship,
@@ -31,6 +32,8 @@ use Everyman\Neo4j\Client,
     Everyman\Neo4j\Gremlin\Query as InternalGremlinQuery,
     Everyman\Neo4j\Cypher\Query as InternalCypherQuery;
 use Everyman\Neo4j\Index\NodeFulltextIndex;
+use HireVoice\Neo4j\Event as Events;
+use HireVoice\Neo4j\Event\Event;
 
 /**
  * The entity manager handles the communication with the database server and
@@ -62,7 +65,10 @@ class EntityManager
 
     private $dateGenerator;
 
-    private $eventHandlers = array();
+    /**
+     * @var EventManager
+     */
+    private $eventManager;
 
     private $pathFinder;
 
@@ -78,7 +84,7 @@ class EntityManager
             $configuration = new Configuration;
         } elseif (is_array($configuration)) {
             $configuration = new Configuration($configuration);
-        } elseif (! $configuration instanceof Configuration) {
+        } elseif (!$configuration instanceof Configuration) {
             throw new Exception('Provided argument must be a Configuration object or an array.');
         }
 
@@ -88,12 +94,21 @@ class EntityManager
 
         $this->dateGenerator = function () {
             $currentDate = new \DateTime;
+
             return $currentDate->format('Y-m-d H:i:s');
         };
 
         $this->pathFinder = new PathFinder\PathFinder;
         $this->pathFinder->setEntityManager($this);
         $configuration->configurePathFinder($this->pathFinder);
+    }
+
+    /**
+     * @param EventManager $eventManager
+     */
+    public function setEventManager(EventManager $eventManager)
+    {
+        $this->eventManager = $eventManager;
     }
 
     /**
@@ -121,24 +136,30 @@ class EntityManager
     {
         $this->begin();
         foreach ($this->entitiesToRemove as $entity){
+            $this->dispatchEvent(new Events\PreRemove($entity));
             $meta = $this->getMeta($entity);
             $pk = $meta->getPrimaryKey();
             $id = $pk->getValue($entity);
-            if ($id){
+            if ($id !== null){
                 $node = $this->client->getNode($id);
 
-                $class = $meta->getName();
-                $index = $this->getRepository($class)->getIndex();
-                $index->remove($node);
+                if($node){
+                    $class = $meta->getName();
+                    $index = $this->getRepository($class)->getIndex();
+                    $index->remove($node);
 
-                $relationships = $node->getRelationships();
-                foreach ($relationships as $relationship){
-                    $relationship->delete();
+                    $relationships = $node->getRelationships();
+                    foreach ($relationships as $relationship){
+                        $relationship->delete();
+                    }
+
+                    $node->delete();
                 }
-
-                $node->delete();
             }
+            $this->dispatchEvent(new Events\PostRemove($entity));
         }
+
+        $this->entitiesToRemove = Array();
 
         $this->commit();
     }
@@ -253,7 +274,7 @@ class EntityManager
      *
      * @param string $string The query string.
      * @param array $parameters The arguments to bind with the query.
-     * @return Everyman\Neo4j\Query\ResultSet
+     * @return \Everyman\Neo4j\Query\ResultSet
      */
     function gremlinQuery($string, $parameters)
     {
@@ -261,10 +282,11 @@ class EntityManager
             $start = microtime(true);
 
             $query = new InternalGremlinQuery($this->client, $string, $parameters);
+            $this->dispatchEvent(new Events\PreStmtExecute($query, $parameters));
             $rs = $query->getResultSet();
 
             $time = microtime(true) - $start;
-            $this->triggerEvent(self::QUERY_RUN, $query, $parameters, $time);
+            $this->dispatchEvent(new Events\PostStmtExecute($query, $parameters, $time));
 
             if (count($rs) === 1
                 && is_string($rs[0][0])
@@ -294,18 +316,19 @@ class EntityManager
      *
      * @param string $string The query string.
      * @param array $parameters The arguments to bind with the query.
-     * @return Everyman\Neo4j\Query\ResultSet
+     * @return \Everyman\Neo4j\Query\ResultSet
      */
-    function cypherQuery($string, $parameters)
+    function cypherQuery($string, array $parameters = array())
     {
         try {
             $start = microtime(true);
 
             $query = new InternalCypherQuery($this->client, $string, $parameters);
+            $this->dispatchEvent(new Events\PreStmtExecute($query, $parameters));
             $rs = $query->getResultSet();
 
             $time = microtime(true) - $start;
-            $this->triggerEvent(self::QUERY_RUN, $query, $parameters, $time);
+            $this->dispatchEvent(new Events\PostStmtExecute($query, $parameters, $time));
 
             return $rs;
         } catch (\Everyman\Neo4j\Exception $e) {
@@ -343,22 +366,27 @@ class EntityManager
      * Register an event listener for a given event.
      *
      * @param string $eventName The event to listen, available as constants.
+     * @deprecated
      */
     function registerEvent($eventName, $callback)
     {
-        $this->eventHandlers[$eventName][] = $callback;
+        trigger_error(
+            'Function HireVoice\Neo4j\EntityManager::registerEvent is deprecated. Use the Doctrine EventManager to register listeners.',
+            E_DEPRECATED
+        );
     }
 
-    private function triggerEvent($eventName, $data)
+    /**
+     * Dispatches a doctrine event
+     *
+     * @see \Doctrine\Common\EventManager::dispatchEvent
+     * @param Event $event
+     * @throws \RuntimeException
+     */
+    private function dispatchEvent(Event $event)
     {
-        if (isset($this->eventHandlers[$eventName])) {
-            $args = func_get_args();
-            array_shift($args);
-
-            foreach ($this->eventHandlers[$eventName] as $callback) {
-                $clone = $args;
-                call_user_func_array($callback, $clone);
-            }
+        if ($this->eventManager instanceof EventManager) {
+            $this->eventManager->dispatchEvent($event->getEventName(), $event);
         }
     }
 
@@ -419,8 +447,10 @@ class EntityManager
     {
         $this->begin();
         foreach ($this->entities as $entity) {
+            $this->dispatchEvent(new Events\PrePersist($entity));
             $hash = $this->getHash($entity);
             $this->nodes[$hash] = $this->createNode($entity)->save();
+            $this->dispatchEvent(new Events\PostPersist($entity));
         }
         $this->commit();
 
@@ -431,9 +461,8 @@ class EntityManager
             $pk = $meta->getPrimaryKey();
 
             $nodeId = $this->nodes[$hash]->getId();
-            if ($pk->getValue($entity) != $nodeId) {
+            if ($pk->getValue($entity) !== $nodeId) {
                 $pk->setValue($entity, $nodeId);
-                $this->triggerEvent(self::ENTITY_CREATE, $entity);
 
                 if ($meta->getLabels()) {
                     $labels = array();
@@ -454,7 +483,7 @@ class EntityManager
         $pk = $meta->getPrimaryKey();
         $id = $pk->getValue($entity);
 
-        if ($id) {
+        if ($id !== null) {
             $node = $this->client->getNode($id);
         } else {
             $node = $this->client->makeNode()
@@ -469,7 +498,7 @@ class EntityManager
 
         $currentDate = $this->getCurrentDate();
 
-        if (! $id) {
+        if ($id === null) {
             $node->setProperty('creationDate', $currentDate);
         }
 
@@ -520,12 +549,14 @@ class EntityManager
     /**
      * @access private
      */
-    function addRelation($relation, $a, $b)
+    function addRelation($name, $a, $b)
     {
         $a = $this->getLoadedNode($a);
         $b = $this->getLoadedNode($b);
 
-        $existing = $this->getRelationsFrom($a, $relation);
+        $this->dispatchEvent(new Events\PreRelationCreate($a, $b, $name));
+
+        $existing = $this->getRelationsFrom($a, $name);
 
         foreach ($existing as $r) {
             if (basename($r['end']) == $b->getId()) {
@@ -533,34 +564,37 @@ class EntityManager
                 $relationship = $this->client->getRelationship(basename($r['self']));
                 $relationship->setProperty('updateDate', $this->getCurrentDate());
 
-                $this->triggerEvent(self::RELATION_UPDATE, $relation, $a, $b, $relationship);
+                $this->dispatchEvent(new Events\PostRelationUpdate($a, $b, $name, $relationship));
 
                 return;
             }
         }
 
-        $relationship = $a->relateTo($b, $relation)
+        $relationship = $a->relateTo($b, $name)
             ->setProperty('creationDate', $this->getCurrentDate())
             ->setProperty('updateDate', $this->getCurrentDate())
             ->save();
 
-        list($relation, $a, $b) = func_get_args();
-        $this->triggerEvent(self::RELATION_CREATE, $relation, $a, $b, $relationship);
+        list($name, $a, $b) = func_get_args();
+        $this->dispatchEvent(new Events\PostRelationCreate($a, $b, $name, $relationship));
     }
 
     /**
      * @access private
      */
-    function removeRelation($relation, $a, $b)
+    function removeRelation($name, $a, $b)
     {
         $a = $this->getLoadedNode($a);
         $b = $this->getLoadedNode($b);
 
-        $existing = $this->getRelationsFrom($a, $relation);
+        $this->dispatchEvent(new Events\PreRelationRemove($a, $b, $name));
+
+        $existing = $this->getRelationsFrom($a, $name);
 
         foreach ($existing as $r) {
             if (basename($r['end']) == $b->getId()) {
                 $this->deleteRelationship($r);
+                $this->dispatchEvent(new Events\PostRelationRemove($a, $b, $name));
                 return;
             }
         }
@@ -692,7 +726,7 @@ class EntityManager
     /**
      * Returns the Client
      *
-     * @return Everyman\Neo4j\Client
+     * @return \Everyman\Neo4j\Client
      */
     public function getClient()
     {
@@ -704,3 +738,4 @@ class EntityManager
         return clone $this->pathFinder;
     }
 }
+
