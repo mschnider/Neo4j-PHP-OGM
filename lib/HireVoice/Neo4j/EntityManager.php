@@ -112,6 +112,14 @@ class EntityManager
     }
 
     /**
+     * @return EventManager
+     */
+    public function getEventManager()
+    {
+        return $this->eventManager;
+    }
+
+    /**
      * Includes an entity to persist on the next flush. Persisting entities will cause
      * relations to be followed to discover other entities. Relation traversal will happen
      * during the flush.
