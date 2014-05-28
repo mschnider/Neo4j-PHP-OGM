@@ -602,7 +602,15 @@ class EntityManager
                     $relationship = $this->client->getRelationship(basename($r['self']));
                     $relationship->setProperty('updateDate', $this->getCurrentDate());
 
+                    if ($relation !== null) {
+                        foreach ($relation->getProperties() as $key => $value) {
+                            $relationship->setProperty($key, $value);
+                        }
+                    }
+
                     $this->dispatchEvent(new Events\PreRelationUpdate($a, $b, $relationName, $relationship));
+
+                    $relationship->save();
 
                     return;
                 }
