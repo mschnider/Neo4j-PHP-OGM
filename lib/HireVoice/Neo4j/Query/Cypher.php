@@ -148,6 +148,11 @@ class Cypher
         return $this->appendToQuery('return', func_get_args());
     }
 
+    function delete($string)
+    {
+        return $this->appendToQuery('delete', func_get_args());
+    }
+
     function where($string)
     {
        return $this->appendToQuery('where', func_get_args());
