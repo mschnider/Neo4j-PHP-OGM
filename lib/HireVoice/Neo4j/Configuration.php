@@ -2,7 +2,7 @@
 /**
  * Copyright (C) 2012 Louis-Philippe Huberdeau
  *
- * Permission is hereby granted, free of charge, to any person obtaining a 
+ * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
  * to deal in the Software without restriction, including without limitation
  * the rights to use, copy, modify, merge, publish, distribute, sublicense,
@@ -37,6 +37,7 @@ class Configuration
     private $annotationReader;
     private $username;
     private $password;
+    private $slaves;
 
     private $pathfinderAlgorithm = null;
     private $pathfinderMaxDepth = null;
@@ -53,6 +54,10 @@ class Configuration
 
         if (isset($configs['port'])) {
             $this->port = (int) $configs['port'];
+        }
+
+        if (isset($configs['slaves'])) {
+            $this->slaves = $configs['slaves'];
         }
 
         if (isset($configs['debug'])) {
@@ -92,12 +97,27 @@ class Configuration
 
     private function getTransport()
     {
+        $host = $this->host;
+        $port = $this->port;
+
+        if (!empty($this->slaves)) {
+            $servers = array_merge($this->slaves, array(
+                'host' => $host,
+                'port' => $port
+            ));
+            $slave = array_rand($servers);
+            $slave = current($slave);
+
+            $host = $slave['host'];
+            $port = $slave['port'];
+        }
+
         switch ($this->transport) {
         case 'stream':
-            return new Transport\Stream($this->host, $this->port);
+            return new Transport\Stream($host, $port);
         case 'curl':
         default:
-            return new Transport\Curl($this->host, $this->port);
+            return new Transport\Curl($host, $port);
         }
     }
 
