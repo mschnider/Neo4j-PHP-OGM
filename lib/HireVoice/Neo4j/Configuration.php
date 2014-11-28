@@ -29,6 +29,9 @@ use HireVoice\Neo4j\PathFinder\PathFinder;
 
 class Configuration
 {
+
+    const MAX_RECONNECT = 2;
+
     private $transport = 'default';
     private $host = 'localhost';
     private $port = 7474;
@@ -95,6 +98,25 @@ class Configuration
         return new Client($transport);
     }
 
+    private function checkConnection($host, $port)
+    {
+        $url = 'http://' . $host . ':' . $port . '/db/data/';
+        $client = new \GuzzleHttp\Client();
+
+        $request = new \GuzzleHttp\Message\Request('GET', $url, array(
+            'Accept' => 'application/json; charset=UTF-8'
+        ));
+
+        try {
+            $response = $client->send($request);
+            return $response->getStatusCode() == 200;
+        } catch (\Exception $e) {
+
+        }
+
+        return false;
+    }
+
     private function getTransport()
     {
         $host = $this->host;
@@ -106,11 +128,27 @@ class Configuration
                 'port' => $port
             )));
 
-            $key = array_rand($servers);
-            $slave = $servers[$key];
+            $trys = 0;
+            while (true) {
+                if ($trys >= self::MAX_RECONNECT) {
 
-            $host = $slave['host'];
-            $port = $slave['port'];
+                }
+                $key = array_rand($servers);
+                $slave = $servers[$key];
+
+                $host = $slave['host'];
+                $port = $slave['port'];
+
+                if ($this->checkConnection($host, $port)) {
+                    break;
+                }
+
+                if ($trys >= self::MAX_RECONNECT) {
+                    throw new \Exception('could not connect');
+                }
+
+                $trys++;
+            }
         }
 
         switch ($this->transport) {
