@@ -101,23 +101,24 @@ class Configuration
         $port = $this->port;
 
         if (!empty($this->slaves)) {
-            $servers = array_merge($this->slaves, array(
+            $servers = array_merge($this->slaves, array(array(
                 'host' => $host,
                 'port' => $port
-            ));
-            $slave = array_rand($servers);
-            $slave = current($slave);
+            )));
+
+            $key = array_rand($servers);
+            $slave = $servers[$key];
 
             $host = $slave['host'];
             $port = $slave['port'];
         }
 
         switch ($this->transport) {
-        case 'stream':
-            return new Transport\Stream($host, $port);
-        case 'curl':
-        default:
-            return new Transport\Curl($host, $port);
+            case 'stream':
+                return new Transport\Stream($host, $port);
+            case 'curl':
+            default:
+                return new Transport\Curl($host, $port);
         }
     }
 
