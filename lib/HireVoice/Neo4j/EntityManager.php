@@ -24,10 +24,7 @@
 namespace HireVoice\Neo4j;
 
 use Doctrine\Common\EventManager;
-use Everyman\Neo4j\Client,
-    Everyman\Neo4j\Node,
-    Everyman\Neo4j\Relationship,
-    Everyman\Neo4j\Label,
+use Everyman\Neo4j\Label,
     Everyman\Neo4j\Index\NodeIndex,
     Everyman\Neo4j\Gremlin\Query as InternalGremlinQuery,
     Everyman\Neo4j\Cypher\Query as InternalCypherQuery;
@@ -434,6 +431,7 @@ class EntityManager
                     if ($entry instanceof Relation) {
                         $relation = $entry;
                         $relation->setType($property->getName());
+                        $relation->setUnique($property->getUnique());
                         $entry = $entry->getTarget();
                     }
                     $addCallback($entry, $relation);
@@ -445,10 +443,13 @@ class EntityManager
                         if ($entry instanceof Relation) {
                             $relation = $entry;
                             $relation->setType($property->getName());
+                            $relation->setUnique($property->getUnique());
                             $entry = $entry->getTarget();
                         }
 
-                        $removeCallback($entry, $relation);
+                        if (is_callable($removeCallback)) {
+                            $removeCallback($entry, $relation);
+                        }
                     }
                 }
             }
@@ -461,6 +462,7 @@ class EntityManager
                     if ($entry instanceof Relation) {
                         $relation = $entry;
                         $relation->setType($property->getName());
+                        $relation->setUnique($property->getUnique());
                         $entry = $entry->getTarget();
                     }
 
@@ -583,9 +585,13 @@ class EntityManager
     {
         $relationName = $relation;
         $forceCreate = false;
+        $unique = false;
+        $properties = array();
         if ($relation instanceof Relation) {
             $relationName = $relation->getType();
             $forceCreate = $relation->isForceCreate();
+            $unique = $relation->getUnique();
+            $properties = $relation->getProperties();
         } else {
             $relation = null;
         }
@@ -602,10 +608,8 @@ class EntityManager
                     $relationship = $this->client->getRelationship(basename($r['self']));
                     $relationship->setProperty('updateDate', $this->getCurrentDate());
 
-                    if ($relation !== null) {
-                        foreach ($relation->getProperties() as $key => $value) {
-                            $relationship->setProperty($key, $value);
-                        }
+                    foreach ($relation->getProperties() as $key => $value) {
+                        $relationship->setProperty($key, $value);
                     }
 
                     $this->dispatchEvent(new Events\PreRelationUpdate($a, $b, $relationName, $relationship));
@@ -621,13 +625,21 @@ class EntityManager
             ->setProperty('creationDate', $this->getCurrentDate())
             ->setProperty('updateDate', $this->getCurrentDate());
 
-        $this->dispatchEvent(new Events\PreRelationCreate($a, $b, $relationName, $relationship));
-
-        if ($relation !== null) {
-            foreach ($relation->getProperties() as $key => $value) {
-                $relationship->setProperty($key, $value);
-            }
+        foreach ($relation->getProperties() as $key => $value) {
+            $relationship->setProperty($key, $value);
         }
+        if (is_array($unique)) {
+            $uniqueValueArr = array();
+            foreach ($unique as $key) {
+                if (isset($properties[$key])) {
+                    $uniqueValueArr[] = $properties[$key];
+                }
+            }
+            $relationship->setUniqueKey($relation->getType());
+            $relationship->setUniqueValue(json_encode($uniqueValueArr));
+        }
+
+        $this->dispatchEvent(new Events\PreRelationCreate($a, $b, $relationName, $relationship));
 
         $relationship->save();
 

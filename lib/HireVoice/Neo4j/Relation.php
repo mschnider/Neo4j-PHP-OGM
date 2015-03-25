@@ -47,6 +47,11 @@ abstract class Relation
     protected $target;
 
     /**
+     * @var array|false
+     */
+    protected $unique = false;
+
+    /**
      * @var \DateTime
      */
     protected $creationDate;
@@ -86,6 +91,32 @@ abstract class Relation
     public function setCreationDate($creationDate)
     {
         $this->creationDate = $creationDate;
+    }
+
+    /**
+     * set unique
+     *
+     * @param array|false $unique
+     *
+     * @return void
+     * @author Markus Schnider <markus.schnider@apareoo.ch>
+     */
+    public function setUnique($unique)
+    {
+        if (is_bool($unique) || is_array($unique)) {
+            $this->unique = $unique;
+        }
+    }
+
+    /**
+     * get unique
+     *
+     * @return array|false
+     * @author Markus Schnider <markus.schnider@apareoo.ch>
+     */
+    public function getUnique()
+    {
+        return $this->unique;
     }
 
     /**

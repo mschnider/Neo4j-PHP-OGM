@@ -40,6 +40,11 @@ class Property
     private $writeOnly = false;
     private $indexes = array();
 
+    /**
+     * @var array|false
+     */
+    private $unique = false;
+
     function __construct($reader, $property)
     {
         $this->reader = $reader;
@@ -96,11 +101,20 @@ class Property
         return $this->writeOnly;
     }
 
+    /**
+     * @return array|false
+     */
+    public function getUnique()
+    {
+        return $this->unique;
+    }
+
     function isRelation()
     {
         if ($annotation = $this->reader->getPropertyAnnotation($this->property, self::TO_ONE)) {
             if ($annotation->relation) {
                 $this->name = $annotation->relation;
+                $this->unique = $annotation->unique;
             }
 
             $this->traversed = ! $annotation->readOnly;
@@ -116,6 +130,7 @@ class Property
         if ($annotation = $this->reader->getPropertyAnnotation($this->property, self::TO_MANY)) {
             if ($annotation->relation) {
                 $this->name = $annotation->relation;
+                $this->unique = $annotation->unique;
             }
 
             $this->traversed = ! $annotation->readOnly;
