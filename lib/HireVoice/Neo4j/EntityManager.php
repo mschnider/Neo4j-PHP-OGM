@@ -641,9 +641,12 @@ class EntityManager
 
         $relationship
             ->resetUniqueness() // is yet saved, ignore uniqueness
-            ->setProperty('creationDate', $this->getCurrentDate())
             ->setProperty('updateDate', $this->getCurrentDate())
         ;
+
+        if (!$relationship->getProperty('creationDate') !== null) {
+            $relationship->setProperty('creationDate', $this->getCurrentDate());
+        }
 
         $this->dispatchEvent(new Events\PreRelationCreate($a, $b, $relationName, $relationship));
 
